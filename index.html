@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <title>CRM – Pipeline de Ventas</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <!-- Supabase -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #f4f6f8;
+      color: #111;
+    }
+
+    header {
+      background: #111827;
+      color: white;
+      padding: 12px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    button {
+      cursor: pointer;
+      padding: 6px 12px;
+      border: none;
+      border-radius: 4px;
+      background: #2563eb;
+      color: white;
+    }
+
+    button.secondary {
+      background: #6b7280;
+    }
+
+    input {
+      padding: 8px;
+      width: 100%;
+      max-width: 300px;
+    }
+
+    section {
+      max-width: 1200px;
+      margin: 40px auto;
+      padding: 20px;
+    }
+
+    #pipeline {
+      display: flex;
+      gap: 12px;
+      overflow-x: auto;
+    }
+
+    .column {
+      background: #e5e7eb;
+      border-radius: 6px;
+      padding: 10px;
+      min-width: 260px;
+    }
+
+    .lead {
+      background: white;
+      padding: 10px;
+      border-radius: 4px;
+      margin-bottom: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,.1);
+      font-size: 14px;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .lead-actions {
+      margin-top: 6px;
+      display: flex;
+      gap: 4px;
+    }
+  </style>
+</head>
+
+<body>
+
+<header>
+  <div>📊 CRM Ventas</div>
+  <div id="user-info"></div>
+</header>
+
+<!-- LOGIN -->
+<section id="login" class="hidden">
+  <h2>Iniciar sesión</h2>
+  <input id="email" type="email" placeholder="Correo" /><br><br>
+  <input id="password" type="password" placeholder="Contraseña" /><br><br>
+  <button onclick="login()">Entrar</button>
+</section>
+
+<!-- APP -->
+<section id="app" class="hidden">
+  <h2>Pipeline de Ventas</h2>
+  <button onclick="addLead()">+ Nuevo Lead</button>
+  <br><br>
+  <div id="pipeline"></div>
+</section>
+
+<script>
+/* =========================
+   CONFIGURACIÓN SUPABASE
+========================= */
+const SUPABASE_URL = "PEGA_AQUI_TU_SUPABASE_URL";
+const SUPABASE_ANON_KEY = "PEGA_AQUI_TU_SUPABASE_ANON_KEY";
+
+const supabase = supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_ANON_KEY
+);
+
+/* =========================
+   ESTADO
+========================= */
+let leads = [];
+const stages = ["Prospecto", "Contacto", "Propuesta", "Cierre"];
+
+/* =========================
+   AUTH
+========================= */
+async function checkSession() {
+  const { data } = await supabase.auth.getSession();
+
+  if (data.session) {
+    showApp(data.session.user);
+    loadLeads();
+  } else {
+    document.getElementById("login").classList.remove("hidden");
+  }
+}
+
+async function login() {
+  const email = document.getElementById("email").value;
+  const password = document.getElementById("password").value;
+
+  const { error } = await supabase.auth.signInWithPassword({
+    email,
+    password
+  });
+
+  if (error) {
+    alert(error.message);
+  } else {
+    location.reload();
+  }
+}
+
+async function logout() {
+  await supabase.auth.signOut();
+  location.reload();
+}
+
+function showApp(user) {
+  document.getElementById("login").classList.add("hidden");
+  document.getElementById("app").classList.remove("hidden");
+  document.getElementById("user-info").innerHTML =
+    `${user.email} <button class="secondary" onclick="logout()">Salir</button>`;
+}
+
+/* =========================
+   LEADS
+========================= */
+async function loadLeads() {
+  const { data, error } = await supabase
+    .from("leads")
+    .select("*")
+    .order("created_at");
+
+  if (error) {
+    alert("Error cargando leads");
+    return;
+  }
+
+  leads = data || [];
+  renderPipeline();
+}
+
+async function addLead() {
+  const name = prompt("Nombre del lead");
+  if (!name) return;
+
+  await supabase.from("leads").insert({
+    name,
+    stage: stages[0]
+  });
+
+  loadLeads();
+}
+
+async function moveLead(id, direction) {
+  const lead = leads.find(l => l.id === id);
+  const index = stages.indexOf(lead.stage);
+  const newStage = stages[index + direction];
+
+  if (!newStage) return;
+
+  await supabase
+    .from("leads")
+    .update({ stage: newStage })
+    .eq("id", id);
+
+  loadLeads();
+}
+
+/* =========================
+   UI
+========================= */
+function renderPipeline() {
+  const pipeline = document.getElementById("pipeline");
+  pipeline.innerHTML = "";
+
+  stages.forEach(stage => {
+    const col = document.createElement("div");
+    col.className = "column";
+    col.innerHTML = `<h4>${stage}</h4>`;
+
+    leads
+      .filter(l => l.stage === stage)
+      .forEach(lead => {
+        const card = document.createElement("div");
+        card.className = "lead";
+        card.innerHTML = `
+          <strong>${lead.name}</strong>
+          <div class="lead-actions">
+            <button onclick="moveLead('${lead.id}', -1)">←</button>
+            <button onclick="moveLead('${lead.id}', 1)">→</button>
+          </div>
+        `;
+        col.appendChild(card);
+      });
+
+    pipeline.appendChild(col);
+  });
+}
+
+checkSession();
+</script>
+
+</body>
+</html>
